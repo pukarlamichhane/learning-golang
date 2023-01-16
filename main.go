@@ -1,115 +1,113 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"strconv"
-	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
 )
 
-type Course struct {
-	Coursename string  `json:"course name"`
-	CourseId   string  `json:"course id"`
-	Author     *Author `json:"Author"`
+type studentinfo struct {
+	Sid    string `json:"id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Course string `json:"course,omitempty"`
 }
 
-type Author struct {
-	Fullname string `json:"full name"`
+func getMYsqlDB() *sql.DB {
+	db, err := sql.Open("mysql", "root:@(127.0.0.1:3306)/studentinfo?parseTime=true")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	return db
 }
+func getstudent(w http.ResponseWriter, r *http.Request) {
+	db := getMYsqlDB()
+	defer db.Close()
+	ss := []studentinfo{}
+	s := studentinfo{}
+	rows, err := db.Query("select * from student")
+	if err != nil {
+		fmt.Fprint(w, err)
+	} else {
+		for rows.Next() {
+			rows.Scan(&s.Sid, &s.Name, &s.Course)
+			ss = append(ss, s)
+		}
+		json.NewEncoder(w).Encode(ss)
+	}
 
-var courses []Course
-
-func (c *Course) IsEmpty() bool {
-	return c.Coursename == ""
-
+	fmt.Fprint(w, "GET the student")
 }
+func deletestudent(w http.ResponseWriter, r *http.Request) {
+	db := getMYsqlDB()
+	defer db.Close()
+	parms := mux.Vars(r)
+	sid, _ := strconv.Atoi(parms["sid"])
+	result, err := db.Exec("delete from student where sid=?", sid)
+	if err != nil {
+		fmt.Fprint(w, err)
+	} else {
+		_, err := result.RowsAffected()
+		if err != nil {
+			fmt.Print(w, err)
+		} else {
+			fmt.Fprint(w, "Suscesssful")
+		}
+	}
+	fmt.Fprint(w, "delete the student")
+}
+func updatestudent(w http.ResponseWriter, r *http.Request) {
+	db := getMYsqlDB()
+	defer db.Close()
+	s := studentinfo{}
+	json.NewDecoder(r.Body).Decode(&s)
+	parms := mux.Vars(r)
+	sid, _ := strconv.Atoi(parms["sid"])
+	result, err := db.Exec("update student set name=?,course=?,where sid=?", sid, s.Name, s.Course)
+	if err != nil {
+		fmt.Fprint(w, err)
+	} else {
+		_, err := result.RowsAffected()
+		if err != nil {
+			json.NewEncoder(w).Encode("error")
+		} else {
+			json.NewEncoder(w).Encode(s)
+		}
+	}
+	fmt.Fprint(w, "update the student")
+}
+func addstudent(w http.ResponseWriter, r *http.Request) {
+	db := getMYsqlDB()
+	defer db.Close()
+	s := studentinfo{}
+	json.NewDecoder(r.Body).Decode(s)
+	sid, _ := strconv.Atoi(s.Sid)
+	result, err := db.Exec("insert into student(sid, name ,course)value(?,?,?)", sid, s.Name, s.Course)
+	if err != nil {
+		fmt.Fprint(w, err)
+	} else {
+		_, err := result.LastInsertId()
+		if err != nil {
+			json.NewEncoder(w).Encode("{No record is inserted}")
+		} else {
+			json.NewEncoder(w).Encode(s)
 
+		}
+	}
+	fmt.Fprint(w, "add the student")
+}
 func main() {
 	r := mux.NewRouter()
-	courses = append(courses, Course{CourseId: "2", Coursename: "react", Author: &Author{Fullname: "pukar"}})
-	r.HandleFunc("/", serverhome).Methods("GET")
-	r.HandleFunc("/all", getallcourse).Methods("GET")
-	r.HandleFunc("/addp", addcourse).Methods("POST")
-	r.HandleFunc("/update/{id}", getonecourse).Methods("GET")
-	r.HandleFunc("/update/{id}", update).Methods("PUT")
-	r.HandleFunc("/delete/{id}", deleteonecourse).Methods("DELETE")
-	log.Fatal(http.ListenAndServe(":4000", r))
+	r.HandleFunc("/students", getstudent).Methods("GET")
+	r.HandleFunc("/students", addstudent).Methods("POST")
+	r.HandleFunc("/students/{Sid}", updatestudent).Methods("PUT")
+	r.HandleFunc("/students/{Sid}", deletestudent).Methods("DELETE")
+	http.ListenAndServe(":8080", r)
 
-}
-
-func serverhome(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("<h1>hello world<h1>"))
-}
-
-func getallcourse(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Contant-type", "application/json")
-	json.NewEncoder(w).Encode(courses)
-}
-
-func getonecourse(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("get one course")
-	w.Header().Set("Contant-type", "application/json")
-	params := mux.Vars(r)
-	fmt.Println(params)
-	for _, course := range courses {
-		if course.CourseId == params["id"] {
-			json.NewEncoder(w).Encode(course)
-			return
-		}
-	}
-	json.NewEncoder(w).Encode("NO course is found in that id")
-	return
-}
-func addcourse(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("create one course")
-	w.Header().Set("Contant-type", "application/json")
-	if r.Body == nil {
-		json.NewEncoder(w).Encode("please insert a value")
-	}
-	var course Course
-	_ = json.NewDecoder(r.Body).Decode(&course)
-	if course.IsEmpty() {
-		json.NewEncoder(w).Encode("please insert a value")
-		return
-	}
-	rand.Seed(time.Now().UnixNano())
-	course.CourseId = strconv.Itoa(rand.Intn(100))
-
-	courses = append(courses, course)
-	json.NewEncoder(w).Encode(course)
-
-}
-func update(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("update one course")
-	w.Header().Set("Contant-type", "application/json")
-	params := mux.Vars(r)
-	for index, course := range courses {
-		if course.CourseId == params["id"] {
-			courses = append(courses[:index], courses[index+1:]...)
-			var course Course
-			_ = json.NewDecoder(r.Body).Decode(&course)
-			course.CourseId = params["id"]
-			courses = append(courses, course)
-			json.NewEncoder(w).Encode(course)
-			return
-		}
-	}
-}
-
-func deleteonecourse(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("delete one course")
-	w.Header().Set("Contant-type", "application/json")
-	params := mux.Vars(r)
-	for index, course := range courses {
-		if course.CourseId == params["id"] {
-			courses = append(courses[:index], courses[index+1:]...)
-			break
-
-		}
-	}
 }
