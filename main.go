@@ -31,6 +31,7 @@ func (c *Course) IsEmpty() bool {
 
 func main() {
 	r := mux.NewRouter()
+	
 	courses = append(courses, Course{CourseId: "2", Coursename: "react", Author: &Author{Fullname: "pukar"}})
 	r.HandleFunc("/", serverhome).Methods("GET")
 	r.HandleFunc("/all", getallcourse).Methods("GET")
